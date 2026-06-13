@@ -9,6 +9,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from .analytics import get_analytics
 from .budget import check_budget_threshold
 from .currency import convert_amount
 from .models import Category, Expense
@@ -211,3 +212,11 @@ def expense_summary(request):
             "categories": categories_list,
         }
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def analytics_dashboard(request):
+    """Get analytics data for dashboard."""
+    analytics_data = get_analytics(request.user)
+    return Response(analytics_data)
