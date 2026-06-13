@@ -64,6 +64,12 @@ def login(request):
 def category_list(request):
     if request.method == "GET":
         categories = Category.objects.filter(user=request.user)
+        
+        # Filter by favorite if requested
+        favorite_only = request.query_params.get("favorite", "false").lower() == "true"
+        if favorite_only:
+            categories = categories.filter(is_favorite=True)
+        
         serializer = CategorySerializer(categories, many=True)
         return Response(serializer.data)
 
@@ -72,6 +78,22 @@ def category_list(request):
         serializer.save(user=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def toggle_category_favorite(request, pk):
+    """Toggle a category as favorite."""
+    try:
+        category = Category.objects.get(pk=pk, user=request.user)
+    except Category.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    category.is_favorite = not category.is_favorite
+    category.save()
+
+    serializer = CategorySerializer(category)
+    return Response(serializer.data)
 
 
 @api_view(["GET", "POST"])
