@@ -1,3 +1,6 @@
+from decimal import Decimal
+
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db.models import Sum
 from rest_framework import status
@@ -6,6 +9,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from .currency import convert_amount
 from .models import Category, Expense
 from .serializers import (
     CategorySerializer,
@@ -131,10 +135,70 @@ def expense_detail(request, pk):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def expense_summary(request):
-    summary = (
-        Expense.objects.filter(user=request.user)
-        .values("category__name")
-        .annotate(total=Sum("amount"))
-        .order_by("category__name")
+    """Get expense summary with currency conversion to base currency."""
+    base_currency = settings.BASE_CURRENCY
+
+    # Get raw data grouped by category and currency
+    expenses = Expense.objects.filter(user=request.user).values(
+        "category__name", "currency"
+    ).annotate(total=Sum("amount"))
+
+    # Organize by category, converting to base currency
+    categories_data = {}
+    for expense in expenses:
+        category_name = expense["category__name"]
+        currency = expense["currency"]
+        amount = expense["total"]
+
+        if category_name not in categories_data:
+            categories_data[category_name] = {
+                "category": category_name,
+                "total": Decimal("0"),
+                "currency_details": {},
+            }
+
+        # Convert to base currency
+        if currency != base_currency:
+            result = convert_amount(amount, currency, base_currency)
+            if result:
+                converted_amount, rate, date = result
+                categories_data[category_name]["total"] += converted_amount
+                categories_data[category_name]["currency_details"][currency] = {
+                    "amount": str(amount),
+                    "rate": str(rate),
+                    "as_of": date,
+                }
+            else:
+                # If conversion fails, include original amount
+                categories_data[category_name]["currency_details"][currency] = {
+                    "amount": str(amount),
+                    "rate": "N/A",
+                    "as_of": "",
+                    "error": "Conversion failed",
+                }
+        else:
+            categories_data[category_name]["total"] += amount
+            categories_data[category_name]["currency_details"][currency] = {
+                "amount": str(amount),
+                "rate": "1.00",
+                "as_of": "",
+            }
+
+    # Format response
+    categories_list = [
+        {
+            "category": data["category"],
+            "total": str(data["total"].quantize(Decimal("0.01"))),
+            "currency_details": data["currency_details"],
+        }
+        for data in sorted(
+            categories_data.values(), key=lambda x: x["category"]
+        )
+    ]
+
+    return Response(
+        {
+            "base_currency": base_currency,
+            "categories": categories_list,
+        }
     )
-    return Response(list(summary))
