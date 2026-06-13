@@ -206,6 +206,7 @@ search/filtering · Monthly spending summaries · Favorite categories.
 Each feature must be fully functional, follow existing API conventions, and
 include validation. You may also improve the Django Admin.
 
+
 ### API documentation
 
 - Update `postman_collection.json` with any new endpoints.
@@ -233,3 +234,83 @@ Submit: GitHub repo URL · updated Postman collection · updated README
 Commit quality · bug-fix correctness (no regressions) · feature design ·
 Postman completeness · code readability · REST conventions (status codes,
 response shape).
+
+........................................................................................................................................................................................................................................................................
+
+## My Features
+
+### Authentication
+- Overview: Token-based authentication (JWT) for all API endpoints. Users register and log in to receive JWT access and refresh tokens.
+- Design decisions: Use `djangorestframework-simplejwt` for lightweight JWT support; scope all `Category` and `Expense` objects to the authenticated user via a `user` ForeignKey.
+- API changes: `POST /api/auth/register/`, `POST /api/auth/login/` (returns `access` and `refresh` tokens), and protected endpoints requiring `Authorization: Bearer <token>`.
+- Example request/response:
+
+  Request:
+
+  ```json
+  POST /api/auth/login/
+  {"username":"alice","password":"secret"}
+  ```
+
+  Response:
+
+  ```json
+  {"access":"<jwt>","refresh":"<jwt>"}
+  ```
+- Assumptions: Clients will include the `access` token in the `Authorization` header. Refresh tokens are supported.
+- Known limits: No social or OAuth providers; basic username/password only.
+
+### Currency Conversion
+- Overview: Expenses may be recorded in any ISO currency; reporting endpoints convert amounts to a configured `BASE_CURRENCY`.
+- Design decisions: Use free public APIs (primary `open.er-api.com`, fallback logic available), cache rates in-memory for 1 hour to reduce external calls, perform conversions with `Decimal` for accuracy.
+- API changes: `GET /api/expenses/` and `GET /api/expenses/{id}/` include `converted_amount` and `conversion_rate`; `GET /api/expenses/summary/` reports totals per category converted to `BASE_CURRENCY`.
+- Example response (summary):
+
+  ```json
+  {
+    "base_currency": "USD",
+    "categories": [
+      {"category":"Travel","total":"129.60","currency_details":{"EUR":{"amount":"120.00","rate":"1.08","as_of":"2026-06-10"}}}
+    ]
+  }
+  ```
+- Assumptions: Rates are reasonably up-to-date; `.env` contains `BASE_CURRENCY` and optional `EXCHANGE_RATE_API_URL`.
+- Known limits: Exchange-rate providers may rate-limit; cached rates may be stale for up to 1 hour; occasional failures fall back gracefully and mark conversions as `N/A`.
+
+### Budget Threshold Bot Alerts
+- Overview: When a category's month-to-date spending exceeds its `monthly_limit`, the system sends an asynchronous chat alert (Telegram supported).
+- Design decisions: Store per-category `monthly_limit` (Decimal); after expense create/update, compute month-to-date totals converted to `BASE_CURRENCY`; if over the limit, send a Telegram message via bot in a background thread.
+- API changes: No user-visible endpoint beyond standard expense create/update; configure `BOT_TOKEN` and `BOT_CHAT_ID` in `.env`.
+- Example alert message:
+
+  ```text
+  ⚠️ Budget alert: "Dining" is over its monthly limit.
+  Spent 215.00 / 200.00 USD for June 2026.
+  ```
+- Assumptions: Telegram bot token and chat id are present in environment variables; alerts are informational and sent off the request path.
+- Known limits: Delivery depends on Telegram availability; no guaranteed retry/backoff implemented (errors are logged).
+
+### Favorite Categories (optional feature)
+- Overview: Mark categories as favorites and filter category lists by favorites.
+- Design decisions: Add `is_favorite` Boolean on `Category`; provide a `PATCH /api/categories/{id}/favorite/` endpoint to toggle.
+- API changes: `GET /api/categories/?favorite=true` filters favorites; `PATCH /api/categories/{id}/favorite/` toggles favorite state.
+- Example request/response:
+
+  ```http
+  PATCH /api/categories/3/favorite/
+  Authorization: Bearer <token>
+  ```
+
+  Response:
+
+  ```json
+  {"id":3,"name":"Dining","is_favorite":true}
+  ```
+- Assumptions: Favorites are user-scoped.
+- Known limits: Simple toggle API; no ordering/prioritization of favorites.
+
+## Bugs Found and Fixed 
+(1) In views of expense_summary, there was ‘Sum’ but that django orm keyword was not imported so it was giving error.
+(2) API endpoints placement in urls.py was incorrect for using api/expenses/summary endpoint as the “/expenses/<pk>” was overriding the reading of the “/expenses/summary” endpoint line in urls.py
+(3) For the create category with monthly budget and create expenses with currency requirements, the necessary column was missing in the model. So, I added monthly_budget column in Category model and currency column in Expenses model. The fields in serializers for both models was added accordingly.
+(4) There were two spelling mistakes which were causing 500 errors.
