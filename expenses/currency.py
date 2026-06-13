@@ -16,6 +16,7 @@ def get_exchange_rate(
     """
     Fetch exchange rate from an external API with caching.
 
+    Uses open.er-api.com (free, no auth required) with fallback to exchangerate.host.
     Returns tuple of (rate, date) or None if fetch fails.
     Caches for 1 hour.
     """
@@ -28,18 +29,15 @@ def get_exchange_rate(
         return cached
 
     try:
-        url = f"{settings.EXCHANGE_RATE_API_URL}/latest"
-        response = requests.get(
-            url, params={"base": from_currency, "symbols": to_currency}, timeout=5
-        )
+        # Try open.er-api.com first (free, no key needed)
+        url = f"https://open.er-api.com/v6/latest/{from_currency}"
+        response = requests.get(url, timeout=5)
         response.raise_for_status()
 
         data = response.json()
 
-        if not data.get("success", True):
-            logger.warning(
-                f"Exchange rate API error: {data.get('error', {}).get('info')}"
-            )
+        if data.get("result") == "error":
+            logger.warning(f"Exchange rate API error: {data.get('error-type')}")
             return None
 
         rates = data.get("rates", {})
@@ -49,7 +47,7 @@ def get_exchange_rate(
             logger.warning(f"No rate found for {from_currency} to {to_currency}")
             return None
 
-        date = data.get("date", "")
+        date = data.get("time_last_updated", "")
         result = (Decimal(str(rate)), date)
 
         # Cache for 1 hour
