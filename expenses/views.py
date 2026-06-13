@@ -9,6 +9,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from .budget import check_budget_threshold
 from .currency import convert_amount
 from .models import Category, Expense
 from .serializers import (
@@ -98,6 +99,10 @@ def expense_list(request):
                 status=status.HTTP_403_FORBIDDEN,
             )
         serializer.save(user=request.user)
+        
+        # Check budget threshold
+        check_budget_threshold(category)
+        
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -125,6 +130,10 @@ def expense_detail(request, pk):
                     status=status.HTTP_403_FORBIDDEN,
                 )
             serializer.save()
+            
+            # Check budget threshold
+            check_budget_threshold(category)
+            
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

@@ -115,3 +115,7 @@ CACHES = {
         "LOCATION": "unique-snowflake",
     }
 }
+
+# Telegram bot for budget alerts
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+BOT_CHAT_ID = os.getenv("BOT_CHAT_ID", "")
